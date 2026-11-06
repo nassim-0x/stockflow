@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import articles_db
 
 # create the main window
 window = tk.Tk()
@@ -15,9 +16,10 @@ def enregistrer_article():
     designation = designation_entry.get()
     famille = famille_combo.get()
 
-    print("Référence :", reference)
-    print("Désignation :", designation)
-    print("Famille :", famille)
+    reference = reference.strip().upper()
+    if reference == "" or designation.strip() == "":
+        messagebox.showwarning("Attention", "La référence et la désignation sont obligatoires.")
+        return
 
     # convert the prices to float because entry give us string
     # if user type letters instead of numbers it show error
@@ -31,18 +33,50 @@ def enregistrer_article():
         )
         return
 
-    print("Prix de vente :", prix_vente)
-    print("Prix d'achat :", prix_achat)
+    if prix_vente < 0 or prix_achat < 0:
+        messagebox.showwarning("Attention", "Les prix ne peuvent pas être négatifs.")
+        return
 
-    unite = unite_entry.get()
-    print("Unité :", unite)
+    # la référence existe déjà -> modification, sinon -> nouvel article
+    if articles_db.existe(reference):
+        articles_db.modifier(reference, designation, famille, prix_vente, prix_achat)
+    else:
+        articles_db.ajouter(reference, designation, famille, prix_vente, prix_achat)
+    charger_articles()
 
 
 # delete button function, not finished yet
 # my friend will do the sql part
 def supprimer_article():
-    # a completer
-    print("Supprimer button clicked!")
+    if not articles_table.selection():
+        messagebox.showwarning("Attention", "Choisissez un article.")
+        return
+    reference = articles_table.selection()[0]
+
+    if int(articles_table.item(reference, "values")[5]) > 0:
+        messagebox.showerror("Refusé", "L'article " + reference + " a des réceptions.")
+        return
+    if messagebox.askyesno("Confirmation", "Supprimer l'article " + reference + " ?"):
+        articles_db.supprimer(reference)
+        charger_articles()
+
+
+# remplit le tableau avec les articles de la base
+def charger_articles():
+    global tous_les_articles
+    for item_id in tous_les_articles:
+        articles_table.delete(item_id)
+
+    for article in articles_db.lister():
+        couleur = ()
+        if article["STOCK_REEL"] <= 0:
+            couleur = ("rupture",)
+        articles_table.insert("", "end", iid=article["REF"], tags=couleur, values=(
+            article["REF"], article["ANAME"], article["FAMILLE"], article["PRIX_VENTE"],
+            article["PRIX_ACHAT"], article["ENTRE"], article["SORTIE"], article["STOCK_REEL"]))
+
+    tous_les_articles = list(articles_table.get_children())
+    calculer_total_stock()
 
 
 # when we click an article in the table
@@ -199,7 +233,7 @@ achat_entry.pack(pady=5)
 
 
 # unite input
-unite_label = ttk.Label(right_frame, text="Unité")
+unite_label = ttk.Label(right_frame, text="Stock minimal")
 unite_label.pack(pady=5)
 
 unite_entry = ttk.Entry(right_frame)
@@ -338,41 +372,7 @@ articles_table.configure(xscrollcommand=horizontal_scrollbar.set)
 
 #############TEST DATA#################
 
-# this article is just for testing
-# stock reel is 0 so we give it the red rupture tag
-articles_table.insert(
-    "",
-    "end",
-    values=(
-        "TV-LED55",
-        "Téléviseur LED 55 pouces",
-        "Télévision",
-        4500,
-        3200,
-        20,
-        5,
-        0
-    ),
-    tags=("rupture",)
-)
-
-
-# add 30 fake articles so we can test table and scrolling
-for i in range(30):
-    articles_table.insert(
-        "",
-        "end",
-        values=(
-            f"ART-{i}",
-            f"Article numéro {i}",
-            "Télévision",
-            4500,
-            3200,
-            20,
-            5,
-            15
-        )
-    )
+# les articles viennent maintenant de la base (voir charger_articles)
 
 
 # save all row ids so search can hide and show them again
@@ -387,7 +387,7 @@ articles_table.bind(
 
 
 # calculate the total once after inserting the test articles
-calculer_total_stock()
+charger_articles()
 
 
 window.mainloop()
