@@ -1,19 +1,15 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import clients_db
 
 
 
 # code du client -> [raison sociale, adresse, téléphone]
-clients = {
-    "C0001": ["Maison du Confort SARL", "12, bd de la Résistance - Casablanca", "05 22 40 11 20"],
-    "C0002": ["Résidence Les Palmiers", "Route d'Azemmour - Casablanca", "05 22 39 87 45"],
-    "C0003": ["Café-Restaurant Le Central", "45, av. Hassan II - Rabat", "05 37 70 25 61"],
-    "C0004": ["Clinique Al Amal", "8, rue Ibn Sina - Mohammedia", "05 23 31 44 09"],
-    "C0005": ["Hôtel Oasis Marrakech", "Zone hôtelière - Marrakech", "05 24 43 18 77"],
-}
+clients = clients_db.lister()
 
 # Ces clients ont des livraisons : on n'a pas le droit de les supprimer
-clients_avec_livraisons = ["C0001", "C0003"]
+# (les livraisons ne sont pas gardées dans la base : on a seulement 3 tables)
+clients_avec_livraisons = []
 
 
 
@@ -105,6 +101,8 @@ def enregistrer():
         return
 
     
+    if not clients_db.enregistrer(code, nom, adresse, tel):
+        return
     clients[code] = [nom, adresse, tel]
     afficher()
     if tableau.exists(code):
@@ -123,6 +121,8 @@ def supprimer():
         messagebox.showerror("Refusé", "Le client " + code + " a des livraisons.")
         return
 
+    if not clients_db.supprimer(code):
+        return
     del clients[code]
     afficher()
     nouveau()
