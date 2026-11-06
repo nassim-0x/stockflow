@@ -1,5 +1,9 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
+from datetime import datetime
+import articles_db
+import fournisseurs_db
+import mouvements_db
 
 # create the main window
 window = tk.Tk()
@@ -23,10 +27,10 @@ title.pack(pady=10)
 
 # when we click nouvelle reception it open a new window (popup)
 # to write the informations of the new reception
-def ouvrir_popup():
+def ouvrir_popup(numero=None):
     popup = tk.Toplevel(window)
     popup.title("Nouvelle réception")
-    popup.geometry("950x650")
+    popup.geometry("950x760")
 
     # entete part, the main infos of the reception
     entete = ttk.LabelFrame(popup, text="Entête", padding=15)
@@ -58,11 +62,7 @@ def ouvrir_popup():
     # the list is just for testing, later it will come from the database
     fournisseur_combo = ttk.Combobox(
         entete,
-        values=[
-            "F0001 | Distrib Électro Maroc",
-            "F0002 | Froid Industrie SA",
-            "F0003 | TechnoVision Import"
-        ],
+        values=fournisseurs_db.pour_reception(),
         width=45,
         state="readonly"
     )
@@ -119,16 +119,6 @@ def ouvrir_popup():
 
     table_lignes.pack(fill="both", expand=True)
 
-    # 2 test lignes just to see how the table look
-    # montant = quantite * prix
-    table_lignes.insert("", "end", values=(
-        "ART001", "Réfrigérateur Samsung", 2, "U", "4500.00", "9000.00"
-    ))
-
-    table_lignes.insert("", "end", values=(
-        "ART002", "Télévision LG", 3, "U", "3200.00", "9600.00"
-    ))
-
     # here we choose the article and write its quantity and price
     article_frame = ttk.LabelFrame(
         popup,
@@ -144,11 +134,7 @@ def ouvrir_popup():
 
     article_combo = ttk.Combobox(
         article_frame,
-        values=[
-            "ART001 - Réfrigérateur Samsung",
-            "ART002 - Télévision LG",
-            "ART003 - Machine à laver"
-        ],
+        values=articles_db.pour_reception(),
         width=35
     )
     article_combo.grid(row=0, column=1, padx=5, pady=5)
@@ -177,6 +163,98 @@ def ouvrir_popup():
     prix_entry = ttk.Entry(article_frame, width=15)
     prix_entry.grid(row=1, column=3, padx=5, pady=5)
 
+    # les lignes de la réception : référence -> [quantité, prix]
+    lignes = {}
+
+    def afficher_lignes():
+        for ligne in table_lignes.get_children():
+            table_lignes.delete(ligne)
+        total = 0
+        for ref in lignes:
+            quantite, prix = lignes[ref]
+            nom = articles_db.article(ref)["ANAME"]
+            table_lignes.insert("", "end", iid=ref, values=(ref, nom, quantite, "U", prix, quantite * prix))
+            total = total + quantite * prix
+        total_label.config(text=f"{total:.2f} DH")
+
+    def article_choisi(event):
+        """On propose le prix d'achat de la fiche article."""
+        article = articles_db.article(article_combo.get().split(" - ")[0])
+        if article is not None:
+            ecrire(prix_entry, article["PRIX_ACHAT"])
+            ecrire(unite_entry, "U")
+
+    def ligne_choisie(event):
+        """On clique sur une ligne : elle est recopiée dans les champs."""
+        if table_lignes.selection():
+            ref = table_lignes.selection()[0]
+            article_combo.set(ref + " - " + articles_db.article(ref)["ANAME"])
+            ecrire(quantite_entry, lignes[ref][0])
+            ecrire(prix_entry, lignes[ref][1])
+
+    def ajouter_ligne():
+        """Ajoute la ligne, ou la remplace si l'article est déjà dans la réception."""
+        ref = article_combo.get().split(" - ")[0].strip()
+        if articles_db.article(ref) is None:
+            messagebox.showwarning("Attention", "Choisissez un article de la liste.", parent=popup)
+            return
+        try:
+            quantite = int(quantite_entry.get())
+            prix = float(prix_entry.get())
+        except ValueError:
+            messagebox.showwarning("Attention", "Quantité et prix doivent être des nombres.", parent=popup)
+            return
+        if quantite <= 0 or prix < 0:
+            messagebox.showwarning("Attention", "La quantité doit être positive.", parent=popup)
+            return
+        lignes[ref] = [quantite, prix]
+        afficher_lignes()
+
+    def supprimer_ligne():
+        if not table_lignes.selection():
+            messagebox.showwarning("Attention", "Choisissez une ligne.", parent=popup)
+            return
+        del lignes[table_lignes.selection()[0]]
+        afficher_lignes()
+
+    def enregistrer():
+        numero = numero_entry.get()
+        date = date_entry.get()
+        fournisseur = fournisseur_combo.get()
+        if date == "" or fournisseur == "" or len(lignes) == 0:
+            messagebox.showwarning("Attention", "Il faut une date, un fournisseur et au moins une ligne.", parent=popup)
+            return
+        try:
+            datetime.strptime(date, "%d/%m/%Y")
+        except ValueError:
+            messagebox.showwarning("Attention", "La date doit être au format JJ/MM/AAAA.", parent=popup)
+            return
+
+        # un article n'a qu'un seul fournisseur (association FOURNIR)
+        code = fournisseur.split(" | ")[0]
+        for ref in lignes:
+            article = articles_db.article(ref)
+            if article is None or article["FCODE"] not in (None, code):
+                messagebox.showerror("Refusé", "L'article " + ref + " est fourni par un autre fournisseur.", parent=popup)
+                return
+
+        anciennes = {}
+        if numero in receptions:
+            anciennes = receptions[numero][2]
+        ref = mouvements_db.stock_negatif(anciennes, lignes)
+        if ref != "":
+            messagebox.showerror("Refusé", "Le stock de " + ref + " a déjà été livré.", parent=popup)
+            return
+
+        mouvements_db.annuler_reception(anciennes)
+        mouvements_db.receptionner(lignes, code)
+        receptions[numero] = [date, fournisseur, dict(lignes)]
+        afficher_receptions()
+        popup.destroy()
+
+    article_combo.bind("<<ComboboxSelected>>", article_choisi)
+    table_lignes.bind("<<TreeviewSelect>>", ligne_choisie)
+
     # buttons to add, edit or delete a ligne in the table
     # they dont do anything yet, the functions will be added later
     lignes_buttons = ttk.Frame(popup)
@@ -184,17 +262,20 @@ def ouvrir_popup():
 
     ttk.Button(
         lignes_buttons,
-        text="Ajouter ligne"
+        text="Ajouter ligne",
+        command=ajouter_ligne
     ).pack(side="left", padx=5)
 
     ttk.Button(
         lignes_buttons,
-        text="Modifier ligne"
+        text="Modifier ligne",
+        command=ajouter_ligne
     ).pack(side="left", padx=5)
 
     ttk.Button(
         lignes_buttons,
-        text="Supprimer ligne"
+        text="Supprimer ligne",
+        command=supprimer_ligne
     ).pack(side="left", padx=5)
 
     # total of all the lignes, it stay 0 for now
@@ -222,7 +303,8 @@ def ouvrir_popup():
     # enregistrer button, the save part will be added with the database
     btn_save = ttk.Button(
         bottom_frame,
-        text="Enregistrer"
+        text="Enregistrer",
+        command=enregistrer
     )
     btn_save.pack(side="right", padx=5)
 
@@ -233,6 +315,82 @@ def ouvrir_popup():
         command=popup.destroy
     )
     btn_cancel.pack(side="right", padx=5)
+
+    if numero is None:
+        numero = prochain_numero()
+        ecrire(date_entry, datetime.now().strftime("%d/%m/%Y"))
+    else:
+        date, fournisseur, anciennes_lignes = receptions[numero]
+        ecrire(date_entry, date)
+        fournisseur_combo.set(fournisseur)
+        fournisseur_combo.config(state="disabled")
+        lignes.update(anciennes_lignes)
+        popup.title("Modifier la réception " + numero)
+    ecrire(numero_entry, numero)
+    numero_entry.config(state="readonly")
+    afficher_lignes()
+
+
+# les réceptions : numéro -> [date, fournisseur, lignes]
+# (avec 3 tables, la base garde seulement le stock, pas la liste des bons)
+receptions = {}
+
+
+def ecrire(champ, texte):
+    champ.delete(0, "end")
+    champ.insert(0, texte)
+
+
+def prochain_numero():
+    plus_grand = 0
+    for numero in receptions:
+        if int(numero[2:]) > plus_grand:
+            plus_grand = int(numero[2:])
+    return "BR" + str(plus_grand + 1).zfill(6)
+
+
+def afficher_receptions():
+    for ligne in table.get_children():
+        table.delete(ligne)
+    texte = search_entry.get().lower()
+    for numero in sorted(receptions, reverse=True):
+        date, fournisseur, lignes = receptions[numero]
+        if texte in (numero + fournisseur).lower():
+            total = 0
+            for ref in lignes:
+                total = total + lignes[ref][0] * lignes[ref][1]
+            table.insert("", "end", iid=numero, values=(numero, date, fournisseur, len(lignes), f"{total:.2f}"))
+
+
+def quand_on_tape(event):
+    afficher_receptions()
+
+
+def modifier_reception():
+    if not table.selection():
+        messagebox.showwarning("Attention", "Choisissez une réception.")
+        return
+    ouvrir_popup(table.selection()[0])
+
+
+def double_clic(event):
+    modifier_reception()
+
+
+def supprimer_reception():
+    if not table.selection():
+        messagebox.showwarning("Attention", "Choisissez une réception.")
+        return
+    numero = table.selection()[0]
+    lignes = receptions[numero][2]
+    ref = mouvements_db.stock_negatif(lignes, {})
+    if ref != "":
+        messagebox.showerror("Refusé", "Le stock de " + ref + " a déjà été livré.")
+        return
+    if messagebox.askyesno("Confirmation", "Supprimer " + numero + " ?\nLes quantités seront retirées du stock."):
+        mouvements_db.annuler_reception(lignes)
+        del receptions[numero]
+        afficher_receptions()
 
 
 ##############WINDOW DESIGN##########################
@@ -246,10 +404,10 @@ buttons_frame.pack(fill="x", pady=10)
 btn_new = ttk.Button(buttons_frame, text="Nouvelle réception",    command=ouvrir_popup)
 btn_new.pack(side="left", padx=5)
 
-btn_edit = ttk.Button(buttons_frame, text="Modifier")
+btn_edit = ttk.Button(buttons_frame, text="Modifier", command=modifier_reception)
 btn_edit.pack(side="left", padx=5)
 
-btn_delete = ttk.Button(buttons_frame, text="Supprimer")
+btn_delete = ttk.Button(buttons_frame, text="Supprimer", command=supprimer_reception)
 btn_delete.pack(side="left", padx=5)
 
 # search bar next to the buttons
@@ -258,6 +416,7 @@ search_label.pack(side="left", padx=10)
 
 search_entry = ttk.Entry(buttons_frame, width=25)
 search_entry.pack(side="left")
+search_entry.bind("<KeyRelease>", quand_on_tape)
 
 
 ##############RECEPTIONS TABLE##########################
@@ -288,23 +447,10 @@ table.column("total", width=130, anchor="e")
 
 #############TEST DATA#################
 
-# 3 fake receptions just for testing the table
-table.insert("", "end", values=(
-    "BR000003", "06/10/2026",
-    "F0001 - Distrib Électro Maroc", 4, "84 000,00"
-))
-
-table.insert("", "end", values=(
-    "BR000002", "03/10/2026",
-    "F0002 - Froid Industrie SA", 2, "81 600,00"
-))
-
-table.insert("", "end", values=(
-    "BR000001", "01/10/2026",
-    "F0003 - TechnoVision Import", 4, "167 350,00"
-))
-
+# les réceptions viennent maintenant de afficher_receptions
 table.pack(fill="both", expand=True)
+table.bind("<Double-1>", double_clic)
+afficher_receptions()
 
 # start the app
 window.mainloop()
