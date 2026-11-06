@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 
-# ============ 1) LES DONNÉES (plus tard : la base de Reda) ============
 
 # code du client -> [raison sociale, adresse, téléphone]
 clients = {
@@ -17,7 +16,7 @@ clients = {
 clients_avec_livraisons = ["C0001", "C0003"]
 
 
-# ============ 2) PETITS OUTILS ============
+
 
 def ecrire(champ, texte):
     """Remplace le texte d'un champ de saisie."""
@@ -36,13 +35,13 @@ def prochain_code():
     """Cherche le plus grand code et ajoute 1 : C0005 -> C0006."""
     plus_grand = 0
     for code in clients:
-        numero = int(code[1:])            # "C0005" -> 5
+        numero = int(code[1:])            
         if numero > plus_grand:
             plus_grand = numero
-    return "C" + str(plus_grand + 1).zfill(4)   # 6 -> "0006" -> "C0006"
+    return "C" + str(plus_grand + 1).zfill(4)   
 
 
-# ============ 3) LES ACTIONS ============
+
 
 def afficher():
     """Vide le tableau puis le remplit avec les clients qui correspondent à la recherche."""
@@ -94,23 +93,22 @@ def enregistrer():
     adresse = e_adresse.get().strip()
     tel = e_tel.get().strip()
 
-    # Contrôle 1 : la raison sociale est obligatoire
+    
     if nom == "":
         messagebox.showwarning("Attention", "La raison sociale est obligatoire.")
         return
 
-    # Contrôle 2 : si le téléphone est rempli, il faut 10 chiffres
+    
     chiffres = tel.replace(" ", "")
     if tel != "" and (len(chiffres) != 10 or not chiffres.isdigit()):
         messagebox.showwarning("Attention", "Le téléphone doit avoir 10 chiffres.")
         return
 
-    # Ajoute le client s'il est nouveau, le remplace s'il existe déjà
+    
     clients[code] = [nom, adresse, tel]
     afficher()
     if tableau.exists(code):
-        tableau.selection_set(code)       # resélectionne la ligne enregistrée
-
+        tableau.selection_set(code)       
 
 def supprimer():
     if not tableau.selection():
@@ -130,16 +128,16 @@ def supprimer():
     nouveau()
 
 
-# ============ 4) LA FENÊTRE ============
+
 
 fenetre = tk.Tk()
 fenetre.title("Gestion Stock - Clients")
 fenetre.geometry("1050x450")
 
-# --- Barre d'état (tout en bas) ---
+
 ttk.Label(fenetre, text="Connecté à la base commerce", relief="sunken").pack(side="bottom", fill="x")
 
-# --- Zone du haut : recherche + compteur ---
+
 haut = ttk.Frame(fenetre)
 haut.pack(fill="x", padx=10, pady=10)
 
@@ -151,7 +149,7 @@ e_recherche.bind("<KeyRelease>", quand_on_tape)
 l_compteur = ttk.Label(haut)
 l_compteur.pack(side="right")
 
-# --- Fiche client (à droite) ---
+
 fiche = ttk.LabelFrame(fenetre, text="Fiche client", padding=10)
 fiche.pack(side="right", fill="y", padx=10, pady=(0, 10))
 
@@ -179,7 +177,7 @@ ttk.Button(fiche, text="Supprimer", command=supprimer).grid(row=4, column=1, sti
 l_mode = ttk.Label(fiche)
 l_mode.grid(row=5, column=0, columnspan=2, sticky="w")
 
-# --- Tableau des clients (à gauche) + barre de défilement ---
+
 barre = ttk.Scrollbar(fenetre)
 barre.pack(side="right", fill="y", pady=(0, 10))
 
@@ -192,10 +190,10 @@ tableau.column("code", width=90)
 tableau.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=(0, 10))
 tableau.bind("<<TreeviewSelect>>", ligne_choisie)
 
-barre.config(command=tableau.yview)       # la barre fait défiler le tableau
-tableau.config(yscrollcommand=barre.set)  # le tableau fait bouger la barre
+barre.config(command=tableau.yview)       
+tableau.config(yscrollcommand=barre.set)  
 
-# --- Démarrage ---
+
 afficher()
 nouveau()
 fenetre.mainloop()
