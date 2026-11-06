@@ -1,18 +1,15 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import fournisseurs_db
 
 
 
 
 # code du fournisseur -> [raison sociale, adresse, téléphone]
-fournisseurs = {
-    "F0001": ["Distrib Électro Maroc", "Zone industrielle Aïn Sebaâ - Casablanca", "05 22 35 60 10"],
-    "F0002": ["Froid Industrie SA", "Parc industriel - Tanger", "05 39 39 52 30"],
-    "F0003": ["TechnoVision Import", "Route de Rabat - Salé", "05 37 88 14 52"],
-}
+fournisseurs = fournisseurs_db.lister()
 
 # Ces fournisseurs ont des réceptions : on n'a pas le droit de les supprimer
-fournisseurs_avec_receptions = ["F0001"]
+fournisseurs_avec_receptions = fournisseurs_db.avec_articles()
 
 
 
@@ -104,6 +101,8 @@ def enregistrer():
         return
 
     
+    if not fournisseurs_db.enregistrer(code, nom, adresse, tel):
+        return
     fournisseurs[code] = [nom, adresse, tel]
     afficher()
     if tableau.exists(code):
@@ -123,6 +122,8 @@ def supprimer():
         messagebox.showerror("Refusé", "Le fournisseur " + code + " a des réceptions.")
         return
 
+    if not fournisseurs_db.supprimer(code):
+        return
     del fournisseurs[code]
     afficher()
     nouveau()
