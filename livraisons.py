@@ -1,30 +1,22 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from datetime import datetime
+import articles_db
+import clients_db
+import mouvements_db
 
 
 
 
 # référence de l'article -> [désignation, prix de vente, stock]
-articles = {
-    "FR-300L": ["Réfrigérateur 300 L", 4590, 6],
-    "LL-7KG": ["Lave-linge 7 kg", 3290, 10],
-    "TV-LED55": ["Téléviseur LED 55 pouces", 4990, 8],
-    "TV-OLED65": ["Téléviseur OLED 65 pouces", 12900, 5],
-    "HDMI-2M": ["Câble HDMI 2 m", 49, 40],
-}
+articles = articles_db.pour_livraison()
 
-clients = ["C0001 | Maison du Confort SARL", "C0002 | Résidence Les Palmiers",
-           "C0003 | Café-Restaurant Le Central", "C0004 | Clinique Al Amal",
-           "C0005 | Hôtel Oasis Marrakech"]
+clients = clients_db.pour_livraison()
 
 # numéro du BL -> [date, client, lignes]
 # lignes = { référence de l'article : [quantité, prix] }
-livraisons = {
-    "BL000001": ["08/10/2026", clients[0], {"FR-300L": [4, 4590], "LL-7KG": [3, 3290], "TV-LED55": [6, 4990]}],
-    "BL000002": ["10/10/2026", clients[4], {"TV-LED55": [6, 4990], "HDMI-2M": [10, 49]}],
-    "BL000003": ["13/10/2026", clients[2], {"FR-300L": [2, 4590], "HDMI-2M": [5, 49]}],
-    "BL000004": ["15/10/2026", clients[3], {"LL-7KG": [4, 3290], "FR-300L": [3, 4590]}],
-}
+# (avec 3 tables, la base garde seulement le stock, pas la liste des bons)
+livraisons = {}
 
 # Les lignes du BL ouvert dans la fenêtre de saisie
 lignes_en_cours = {}
@@ -106,11 +98,21 @@ def supprimer():
     numero = tableau.selection()[0]
     if messagebox.askyesno("Confirmation", "Supprimer " + numero + " ?\n"
                            "Les quantités seront remises en stock."):
+        mouvements_db.annuler_livraison(livraisons[numero][2])
         del livraisons[numero]
         afficher_liste()
 
 def ouvrir_saisie(numero, date, client, lignes):
     saisie.title("Livraison " + numero)
+
+    # on relit les articles (stock à jour) et les clients dans la base
+    articles.clear()
+    articles.update(articles_db.pour_livraison())
+    choix_articles.clear()
+    for ref in articles:
+        choix_articles.append(ref + " | " + articles[ref][0])
+    c_article.config(values=choix_articles)
+    c_client.config(values=clients_db.pour_livraison())
 
     e_numero.state(["!readonly"])        
     ecrire(e_numero, numero)
@@ -207,12 +209,19 @@ def enregistrer():
         messagebox.showwarning("Attention", "Il faut une date, un client et au moins une ligne.",
                                parent=saisie)
         return
+    try:
+        datetime.strptime(date, "%d/%m/%Y")
+    except ValueError:
+        messagebox.showwarning("Attention", "La date doit être au format JJ/MM/AAAA.", parent=saisie)
+        return
 
     
     problemes = ""
     for ref in lignes_en_cours:
         quantite = lignes_en_cours[ref][0]
         stock = articles[ref][2]
+        if numero in livraisons and ref in livraisons[numero][2]:
+            stock = stock + livraisons[numero][2][ref][0]   # ce que l'ancien BL avait déjà sorti
         if quantite > stock:
             problemes = problemes + "\n - " + ref + " : disponible " + str(stock) + ", demandé " + str(quantite)
 
@@ -220,6 +229,9 @@ def enregistrer():
         messagebox.showerror("Livraison refusée", "Stock insuffisant :" + problemes, parent=saisie)
         return                                   
 
+    if numero in livraisons:
+        mouvements_db.annuler_livraison(livraisons[numero][2])
+    mouvements_db.livrer(lignes_en_cours)
     livraisons[numero] = [date, client, dict(lignes_en_cours)]
     afficher_liste()
     fermer_saisie()
@@ -229,7 +241,6 @@ fenetre = tk.Tk()
 fenetre.title("Gestion Stock - Livraisons")
 fenetre.geometry("1000x450")
 
-ttk.Label(fenetre, text="Connecté à la base commerce", relief="sunken").pack(side="bottom", fill="x")
 
 haut = ttk.Frame(fenetre)
 haut.pack(fill="x", padx=10, pady=10)
